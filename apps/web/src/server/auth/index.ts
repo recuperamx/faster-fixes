@@ -1,3 +1,4 @@
+import { isCloud } from "@/utils/environment/env";
 import { prisma } from "@workspace/db";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
@@ -65,7 +66,10 @@ export const auth = betterAuth({
     customSessionPlugin,
     admin(),
     organizationPlugin,
-    stripePlugin,
+    // RECUPERA FORK PATCH: billing is cloud-only. On a self-hosted instance the
+    // plugin's `createCustomerOnSignUp` would call Stripe with a placeholder
+    // key on every sign-up and break account creation, so omit it entirely.
+    ...(isCloud() ? [stripePlugin] : []),
     lastLoginMethod(),
     nextCookies(), // must be last plugin of the array
   ],
