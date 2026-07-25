@@ -16,6 +16,8 @@ rebase these patches when syncing.
 | 3 | `packages/database/package.json` | The docs reference a `migrate:deploy` script that does not exist; `migrate:prod` uses `dotenv -e .env.local`, which is absent on a PaaS. | Added `migrate:deploy`, which reads host-injected env vars. |
 | 4 | `apps/web/src/server/auth/plugins/stripe.ts` + `server/auth/index.ts` | The docs say Stripe is not needed when self-hosting, but a module-scope throw broke *any* production build, and `createCustomerOnSignUp` would call Stripe with a placeholder key and break sign-up. | Both the throw and the plugin registration are gated on `isCloud()`. |
 | 5 | `apps/web/src/server/github/github-app.ts` | Resolved `GITHUB_PRIVATE_KEY` at module scope, so builds crashed with `Cannot read properties of undefined (reading 'replace')` when the "optional" GitHub App was not configured. | Credentials resolve lazily, with a clear error only if the integration is actually used. |
+| 6 | `apps/web/src/server/storage/index.ts` | Hardcoded the Cloudflare R2 client, so self-hosting could only ever use R2 despite the docs saying "AWS S3 works identically". | Client is chosen from the environment: `AWS_S3_ENDPOINT` → generic S3 (AWS with a custom endpoint, R2's S3 API, MinIO, LocalStack); `R2_ACCOUNT_ID` → native R2; otherwise AWS by region. Recupera reuses `api-recupera`'s existing credentials. |
+| 7 | `turbo.json` | Turbo's strict env mode filtered `AWS_*` out of the build task, so `turbo run build` failed with "storage is not configured" while a direct `next build` succeeded with the identical shell env. A genuinely confusing one to debug. | Added `globalPassThroughEnv` declaring every variable the app reads, which also makes cache keys correct. |
 
 ## Build configuration
 
