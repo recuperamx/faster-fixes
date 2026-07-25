@@ -1,9 +1,18 @@
 import { SUBSCRIPTION_PLANS } from "@/server/auth/config/subscription-plans";
 import { stripeApi } from "@/server/stripe";
+import { isCloud } from "@/utils/environment/env";
 import { stripe } from "@better-auth/stripe";
 import { prisma } from "@workspace/db";
 
-if (process.env.NODE_ENV === "production" && !process.env.STRIPE_WEBHOOK_SIGNING_SECRET) {
+// RECUPERA FORK PATCH: billing is cloud-only (the self-hosting docs say Stripe
+// is not needed), but this throw fired for ANY production build and broke
+// `next build` at page-data collection. Scope it to the cloud instance, which
+// is the only place the plugin is registered — see server/auth/index.ts.
+if (
+  isCloud() &&
+  process.env.NODE_ENV === "production" &&
+  !process.env.STRIPE_WEBHOOK_SIGNING_SECRET
+) {
   throw new Error("STRIPE_WEBHOOK_SIGNING_SECRET is required in production");
 }
 

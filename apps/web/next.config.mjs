@@ -1,5 +1,20 @@
 import { createMDX } from "fumadocs-mdx/next";
 
+// RECUPERA FORK PATCH: upstream hardcodes its own R2 public hostname in
+// `images.remotePatterns`, so a self-hosted instance pointed at a different
+// bucket gets its screenshots rejected by next/image. Derive the allowed host
+// from NEXT_PUBLIC_STORAGE_BASE_URL instead.
+const storageRemotePattern = (() => {
+  const baseUrl = process.env.NEXT_PUBLIC_STORAGE_BASE_URL;
+  if (!baseUrl) return [];
+  try {
+    const { protocol, hostname } = new URL(baseUrl);
+    return [{ protocol: protocol.replace(":", ""), hostname }];
+  } catch {
+    return [];
+  }
+})();
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ["@workspace/ui"],
@@ -43,6 +58,9 @@ const nextConfig = {
     // Longer cache TTL for production performance
     minimumCacheTTL: 31536000, // 1 year
     remotePatterns: [
+      // Self-hosted object store, derived from NEXT_PUBLIC_STORAGE_BASE_URL
+      ...storageRemotePattern,
+
       // Google profile pictures
       {
         protocol: "https",
