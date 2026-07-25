@@ -4,6 +4,7 @@
   "globalPassThroughEnv": [
     "NODE_ENV",
     "DOMAIN_NAME",
+    "MAIL_DOMAIN",
     "BASE_URL",
     "DATABASE_URL",
     "DB_DRIVER",
