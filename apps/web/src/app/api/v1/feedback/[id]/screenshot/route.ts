@@ -1,4 +1,5 @@
 import { checkRateLimit } from "@/server/api/check-rate-limit";
+import { inngest } from "@/server/inngest";
 import { resolveProject } from "@/server/api/resolve-project";
 import { validateOrigin } from "@/server/api/validate-origin";
 import { validateReviewer } from "@/server/api/validate-reviewer";
@@ -116,6 +117,14 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
       screenshot: { select: { key: true, provider: true, bucket: true } },
     },
   });
+
+  // The widget uploads the screenshot in the background, *after* creating the
+  // feedback, so `feedback/created` consumers can start before it exists. Tell
+  // them it has landed. Fire-and-forget: a queue outage must not fail an upload
+  // that already succeeded.
+  inngest
+    .send({ name: "feedback/screenshot-attached", data: { feedbackId: id } })
+    .catch(() => {});
 
   const screenshotUrl = updated.screenshot
     ? await getSignedAssetUrl(updated.screenshot)

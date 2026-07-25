@@ -8,6 +8,11 @@ import { getSignedAssetUrl } from "@/server/storage/get-signed-asset-url";
 import { prisma } from "@workspace/db";
 import { inngest } from "./index";
 
+// Observed in staging: ~3s for the widget's full-quality capture, a fallback
+// capture if that is too slow, then ~2.5s to upload. 30s is generous headroom
+// without stalling the issue for long when no screenshot ever arrives.
+const SCREENSHOT_WAIT_TIMEOUT = "30s";
+
 export const createGitHubIssue = inngest.createFunction(
   {
     id: "create-github-issue",
@@ -21,8 +26,56 @@ export const createGitHubIssue = inngest.createFunction(
       },
     ],
   },
-  async ({ event }) => {
+  async ({ event, step }) => {
     const { feedbackId } = event.data;
+
+    // The widget calls `uploadScreenshotInBackground` *without* awaiting it, so
+    // `feedback/created` routinely arrives a couple of seconds before the
+    // screenshot exists. Creating the issue immediately produced a body with no
+    // screenshot at all, silently.
+    //
+    // Read the decision inside a step so it is memoized: Inngest replays this
+    // function after the wait, and branching on a live DB read would flip the
+    // condition between replays and desynchronise the step sequence.
+    const shouldWaitForScreenshot = await step.run(
+      "needs-screenshot-wait",
+      async () => {
+        // Only the automatic path races. A manual request happens long after
+        // upload would have finished, and must not stall on a screenshot that
+        // is never coming.
+        if (event.name !== "feedback/created") return false;
+
+        const pending = await prisma.feedback.findUnique({
+          where: { id: feedbackId },
+          select: {
+            screenshotId: true,
+            issueLink: { select: { id: true } },
+            project: {
+              select: { gitHubLink: { select: { id: true } } },
+            },
+          },
+        });
+
+        // Nothing to wait for if it already arrived, there is no repo linked,
+        // or an issue already exists.
+        return Boolean(
+          pending &&
+            !pending.screenshotId &&
+            !pending.issueLink &&
+            pending.project.gitHubLink,
+        );
+      },
+    );
+
+    if (shouldWaitForScreenshot) {
+      // Bounded: the screenshot is best-effort and the widget can legitimately
+      // give up, so time out and post without it rather than never posting.
+      await step.waitForEvent("await-screenshot", {
+        event: "feedback/screenshot-attached",
+        match: "data.feedbackId",
+        timeout: SCREENSHOT_WAIT_TIMEOUT,
+      });
+    }
 
     const feedback = await prisma.feedback.findUnique({
       where: { id: feedbackId },
